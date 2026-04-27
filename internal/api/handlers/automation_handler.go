@@ -135,10 +135,8 @@ func (h *AutomationHandler) ExecuteAutomation(c *gin.Context) {
 		return
 	}
 
-	userID := 1
 	job := &models.Job{
 		AutomationID: automationID,
-		UserID:       &userID,
 		Status:       "pending",
 		Parameters:   paramsJSON,
 	}

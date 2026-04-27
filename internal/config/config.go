@@ -10,6 +10,11 @@ type Config struct {
 	Server   ServerConfig
 	Database DatabaseConfig
 	RabbitMQ RabbitMQConfig
+	Worker   WorkerConfig
+}
+
+type WorkerConfig struct {
+	APIKey string `mapstructure:"apikey"`
 }
 
 type ServerConfig struct {
@@ -52,6 +57,7 @@ func LoadConfig(path string) (config Config, err error) {
 		"rabbitmq.user":     "MAESTRO_RABBITMQ_USER",
 		"rabbitmq.password": "MAESTRO_RABBITMQ_PASSWORD",
 		"server.port":       "MAESTRO_SERVER_PORT",
+		"worker.apikey":     "MAESTRO_WORKER_API_KEY",
 	}
 
 	for key, env := range bindings {

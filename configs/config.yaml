@@ -14,3 +14,8 @@ rabbitmq:
   port: 5672
   user: "guest"
   password: "guest"
+
+worker:
+  # Deixe vazio para desabilitar autenticação em desenvolvimento.
+  # Em produção, defina via variável de ambiente MAESTRO_WORKER_API_KEY.
+  apikey: ""

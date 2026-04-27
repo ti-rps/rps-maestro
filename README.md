@@ -136,41 +136,47 @@ curl -X POST http://localhost:8080/api/v1/automations/1/execute \
 
 ## 🐍 Integração com Workers Python
 
+Os workers precisam enviar o header `X-Worker-API-Key` em todas as chamadas à Worker API.
+O valor deve ser igual ao configurado em `MAESTRO_WORKER_API_KEY` no servidor.
+
 ### Exemplo Básico
 
 ```python
+import os
 import requests
 
-MAESTRO_URL = "http://maestro_backend:8000/api/v1/worker"
+MAESTRO_URL = os.environ.get("MAESTRO_URL", "http://maestro-backend:8000")
+WORKER_API_KEY = os.environ.get("MAESTRO_WORKER_API_KEY", "")
+
+def maestro_headers():
+    headers = {"Content-Type": "application/json"}
+    if WORKER_API_KEY:
+        headers["X-Worker-API-Key"] = WORKER_API_KEY
+    return headers
 
 def process_job(job_id, parameters):
+    base = f"{MAESTRO_URL}/api/v1/worker/jobs/{job_id}"
+
     # 1. Sinalizar início
-    requests.post(f"{MAESTRO_URL}/jobs/{job_id}/start")
-    
+    requests.post(f"{base}/start", headers=maestro_headers())
+
     # 2. Enviar logs durante execução
-    requests.post(
-        f"{MAESTRO_URL}/jobs/{job_id}/log",
-        json={"level": "INFO", "message": "Iniciando processamento..."}
-    )
-    
+    requests.post(f"{base}/log", headers=maestro_headers(),
+                  json={"level": "INFO", "message": "Iniciando processamento..."})
+
     try:
-        # Sua lógica aqui
         result = execute_automation(parameters)
-        
+
         # 3. Finalizar com sucesso
-        requests.post(
-            f"{MAESTRO_URL}/jobs/{job_id}/finish",
-            json={"status": "completed", "result": result}
-        )
+        requests.post(f"{base}/finish", headers=maestro_headers(),
+                      json={"status": "completed", "result": result})
     except Exception as e:
         # 3. Finalizar com falha
-        requests.post(
-            f"{MAESTRO_URL}/jobs/{job_id}/finish",
-            json={"status": "failed", "result": {"error": str(e)}}
-        )
+        requests.post(f"{base}/finish", headers=maestro_headers(),
+                      json={"status": "failed", "result": {"error": str(e)}})
 ```
 
-Ver [examples/worker_example.py](examples/worker_example.py) para exemplo completo.
+Ver [examples/worker_example.py](examples/worker_example.py) para exemplo completo com RabbitMQ.
 
 ## 🔧 Desenvolvimento
 
@@ -229,11 +235,15 @@ rps-maestro/
 ├── internal/
 │   ├── api/
 │   │   ├── server.go            # Servidor HTTP
+│   │   ├── middleware/
+│   │   │   └── worker_auth.go   # Autenticação da Worker API (API Key)
 │   │   └── handlers/            # Handlers das rotas
 │   │       ├── automation_handler.go
 │   │       ├── job_handler.go
 │   │       ├── schedule_handler.go
 │   │       └── worker_handler.go
+│   ├── scheduler/
+│   │   └── scheduler.go         # CronScheduler (executa agendamentos)
 │   ├── config/
 │   │   └── config.go            # Carregamento de config
 │   ├── database/
@@ -271,13 +281,28 @@ rps-maestro/
 
 ## 🔐 Segurança
 
-⚠️ **IMPORTANTE**: Os endpoints da API do Worker não estão protegidos por autenticação.
+### Worker API Key
 
-Para produção, recomenda-se:
-- Implementar API Key authentication
-- Usar HTTPS
-- Restringir acesso por IP
-- Rate limiting
+Os endpoints `/api/v1/worker/*` são protegidos por API Key. Configure nos dois lados:
+
+**Maestro** (`.env` ou variável de ambiente):
+```
+MAESTRO_WORKER_API_KEY=sua-chave-secreta-aqui
+```
+
+**Worker Python** (variável de ambiente do container):
+```
+MAESTRO_WORKER_API_KEY=sua-chave-secreta-aqui
+```
+
+O worker inclui automaticamente o header `X-Worker-API-Key` em todas as chamadas.
+Deixe vazio em desenvolvimento local para desabilitar a verificação.
+
+### Recomendações adicionais para produção
+
+- Usar HTTPS (reverse proxy Nginx/Traefik na frente do Maestro)
+- Restringir acesso à Worker API por IP (apenas containers da mesma rede Docker)
+- Rate limiting no reverse proxy
 
 ## 🤝 Contribuindo
 

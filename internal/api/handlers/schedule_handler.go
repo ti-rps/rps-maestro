@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"context"
+	"log"
 	"net/http"
 	"strconv"
 
@@ -9,17 +11,26 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-type ScheduleHandler struct {
-	scheduleRepo repository.ScheduleRepository
+// ScheduleReloader é implementado pelo scheduler para sincronizar agendamentos após mudanças via API.
+type ScheduleReloader interface {
+	Reload(ctx context.Context) error
 }
 
-func NewScheduleHandler(scheduleRepo repository.ScheduleRepository) *ScheduleHandler {
-	return &ScheduleHandler{scheduleRepo: scheduleRepo}
+type ScheduleHandler struct {
+	scheduleRepo repository.ScheduleRepository
+	reloader     ScheduleReloader
+}
+
+func NewScheduleHandler(scheduleRepo repository.ScheduleRepository, reloader ScheduleReloader) *ScheduleHandler {
+	return &ScheduleHandler{
+		scheduleRepo: scheduleRepo,
+		reloader:     reloader,
+	}
 }
 
 func (h *ScheduleHandler) CreateSchedule(c *gin.Context) {
 	var schedule models.Schedule
-	
+
 	if err := c.ShouldBindJSON(&schedule); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Dados inválidos: " + err.Error()})
 		return
@@ -30,6 +41,7 @@ func (h *ScheduleHandler) CreateSchedule(c *gin.Context) {
 		return
 	}
 
+	h.triggerReload(c.Request.Context())
 	c.JSON(http.StatusCreated, schedule)
 }
 
@@ -80,6 +92,7 @@ func (h *ScheduleHandler) UpdateSchedule(c *gin.Context) {
 		return
 	}
 
+	h.triggerReload(c.Request.Context())
 	c.JSON(http.StatusOK, schedule)
 }
 
@@ -96,5 +109,12 @@ func (h *ScheduleHandler) DeleteSchedule(c *gin.Context) {
 		return
 	}
 
+	h.triggerReload(c.Request.Context())
 	c.Status(http.StatusNoContent)
+}
+
+func (h *ScheduleHandler) triggerReload(ctx context.Context) {
+	if err := h.reloader.Reload(ctx); err != nil {
+		log.Printf("[schedule_handler] erro ao recarregar scheduler: %v", err)
+	}
 }

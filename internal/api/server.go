@@ -1,4 +1,3 @@
-// Local: rps-maestro/internal/api/server.go
 package api
 
 import (
@@ -6,42 +5,50 @@ import (
 	"log"
 
 	"github.com/EnzzoHosaki/rps-maestro/internal/api/handlers"
+	"github.com/EnzzoHosaki/rps-maestro/internal/api/middleware"
 	"github.com/EnzzoHosaki/rps-maestro/internal/config"
 	"github.com/EnzzoHosaki/rps-maestro/internal/queue"
 	"github.com/EnzzoHosaki/rps-maestro/internal/repository"
+	"github.com/EnzzoHosaki/rps-maestro/internal/scheduler"
 	"github.com/gin-gonic/gin"
 )
 
 type Server struct {
 	config         config.ServerConfig
+	workerAPIKey   string
 	userRepo       repository.UserRepository
 	automationRepo repository.AutomationRepository
 	jobRepo        repository.JobRepository
 	jobLogRepo     repository.JobLogRepository
 	scheduleRepo   repository.ScheduleRepository
 	queueClient    *queue.RabbitMQClient
+	scheduler      *scheduler.Scheduler
 	router         *gin.Engine
 }
 
 func NewServer(
 	cfg config.ServerConfig,
+	workerCfg config.WorkerConfig,
 	userRepo repository.UserRepository,
 	automationRepo repository.AutomationRepository,
 	jobRepo repository.JobRepository,
 	jobLogRepo repository.JobLogRepository,
 	scheduleRepo repository.ScheduleRepository,
 	queueClient *queue.RabbitMQClient,
+	sched *scheduler.Scheduler,
 ) *Server {
 	router := gin.Default()
-	
+
 	server := &Server{
 		config:         cfg,
+		workerAPIKey:   workerCfg.APIKey,
 		userRepo:       userRepo,
 		automationRepo: automationRepo,
 		jobRepo:        jobRepo,
 		jobLogRepo:     jobLogRepo,
 		scheduleRepo:   scheduleRepo,
 		queueClient:    queueClient,
+		scheduler:      sched,
 		router:         router,
 	}
 
@@ -85,7 +92,7 @@ func (s *Server) setupRoutes() {
 			jobs.GET("/:id/logs", jobHandler.GetJobLogs)
 		}
 
-		scheduleHandler := handlers.NewScheduleHandler(s.scheduleRepo)
+		scheduleHandler := handlers.NewScheduleHandler(s.scheduleRepo, s.scheduler)
 		schedules := v1.Group("/schedules")
 		{
 			schedules.POST("", scheduleHandler.CreateSchedule)
@@ -96,7 +103,7 @@ func (s *Server) setupRoutes() {
 		}
 
 		workerHandler := handlers.NewWorkerHandler(s.jobRepo, s.jobLogRepo)
-		worker := v1.Group("/worker")
+		worker := v1.Group("/worker", middleware.WorkerAPIKey(s.workerAPIKey))
 		{
 			worker.POST("/jobs/:id/start", workerHandler.HandleJobStart)
 			worker.POST("/jobs/:id/log", workerHandler.HandleJobLog)
@@ -108,7 +115,7 @@ func (s *Server) setupRoutes() {
 func (s *Server) Start() {
 	addr := fmt.Sprintf(":%d", s.config.Port)
 	log.Printf("Iniciando servidor HTTP na porta %s", addr)
-	
+
 	if err := s.router.Run(addr); err != nil {
 		log.Fatalf("Não foi possível iniciar o servidor: %v", err)
 	}
