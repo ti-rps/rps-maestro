@@ -18,7 +18,8 @@ type WorkerConfig struct {
 }
 
 type ServerConfig struct {
-	Port int
+	Port           int
+	AllowedOrigins []string `mapstructure:"-"`
 }
 
 type DatabaseConfig struct {
@@ -56,8 +57,9 @@ func LoadConfig(path string) (config Config, err error) {
 		"rabbitmq.port":     "MAESTRO_RABBITMQ_PORT",
 		"rabbitmq.user":     "MAESTRO_RABBITMQ_USER",
 		"rabbitmq.password": "MAESTRO_RABBITMQ_PASSWORD",
-		"server.port":       "MAESTRO_SERVER_PORT",
-		"worker.apikey":     "MAESTRO_WORKER_API_KEY",
+		"server.port":           "MAESTRO_SERVER_PORT",
+		"server.allowedorigins": "MAESTRO_CORS_ALLOWED_ORIGINS",
+		"worker.apikey":         "MAESTRO_WORKER_API_KEY",
 	}
 
 	for key, env := range bindings {
@@ -72,6 +74,16 @@ func LoadConfig(path string) (config Config, err error) {
 
 	_ = viper.ReadInConfig()
 
-	err = viper.Unmarshal(&config)
+	if err = viper.Unmarshal(&config); err != nil {
+		return
+	}
+
+	if raw := viper.GetString("server.allowedorigins"); raw != "" {
+		for _, o := range strings.Split(raw, ",") {
+			if t := strings.TrimSpace(o); t != "" {
+				config.Server.AllowedOrigins = append(config.Server.AllowedOrigins, t)
+			}
+		}
+	}
 	return
 }
