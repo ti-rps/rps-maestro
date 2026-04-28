@@ -2,31 +2,44 @@
 
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { automationsApi, type Automation } from "@/lib/api";
+import { automationsApi, type Automation, type ParameterSchema } from "@/lib/api";
 import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { ParameterSchemaEditor } from "@/components/parameter-schema-editor";
+import { DynamicParameterForm } from "@/components/dynamic-parameter-form";
 
 type FormData = {
   name: string;
   description: string;
   scriptPath: string;
   queueName: string;
+  parameterSchema: ParameterSchema;
 };
 
-const empty: FormData = { name: "", description: "", scriptPath: "", queueName: "automation_jobs" };
+const empty: FormData = {
+  name: "",
+  description: "",
+  scriptPath: "",
+  queueName: "automation_jobs",
+  parameterSchema: [],
+};
 
 function Modal({
   title,
   onClose,
   children,
+  wide,
 }: {
   title: string;
   onClose: () => void;
   children: React.ReactNode;
+  wide?: boolean;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div
+        className={`w-full ${wide ? "max-w-2xl" : "max-w-md"} max-h-[90vh] overflow-y-auto rounded-lg bg-white p-6 shadow-xl`}
+      >
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-semibold">{title}</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-700 text-xl leading-none">
@@ -82,6 +95,12 @@ function AutomationForm({
           className="w-full rounded border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
       </div>
+
+      <ParameterSchemaEditor
+        value={form.parameterSchema}
+        onChange={(s) => setForm((f) => ({ ...f, parameterSchema: s }))}
+      />
+
       <button
         type="submit"
         disabled={loading}
@@ -105,9 +124,16 @@ export default function AutomationsPage() {
     queryFn: () => automationsApi.list().then((r) => r.data),
   });
 
+  const toPayload = (d: FormData) => ({
+    name: d.name,
+    description: d.description || undefined,
+    scriptPath: d.scriptPath,
+    queueName: d.queueName,
+    parameterSchema: d.parameterSchema.length > 0 ? d.parameterSchema : undefined,
+  });
+
   const create = useMutation({
-    mutationFn: (d: FormData) =>
-      automationsApi.create({ ...d, description: d.description || undefined }),
+    mutationFn: (d: FormData) => automationsApi.create(toPayload(d)),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["automations"] });
       setCreating(false);
@@ -115,8 +141,7 @@ export default function AutomationsPage() {
   });
 
   const update = useMutation({
-    mutationFn: (d: FormData) =>
-      automationsApi.update(editing!.id, { ...d, description: d.description || undefined }),
+    mutationFn: (d: FormData) => automationsApi.update(editing!.id, toPayload(d)),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["automations"] });
       setEditing(null);
@@ -129,7 +154,8 @@ export default function AutomationsPage() {
   });
 
   const execute = useMutation({
-    mutationFn: (id: number) => automationsApi.execute(id),
+    mutationFn: ({ id, params }: { id: number; params: Record<string, unknown> }) =>
+      automationsApi.execute(id, params),
     onSuccess: (res) => {
       setExecResult(`Job criado: ${res.data.id}`);
       qc.invalidateQueries({ queryKey: ["automations"] });
@@ -215,19 +241,20 @@ export default function AutomationsPage() {
       </div>
 
       {creating && (
-        <Modal title="Nova automação" onClose={() => setCreating(false)}>
+        <Modal title="Nova automação" onClose={() => setCreating(false)} wide>
           <AutomationForm initial={empty} onSubmit={(d) => create.mutate(d)} loading={create.isPending} />
         </Modal>
       )}
 
       {editing && (
-        <Modal title="Editar automação" onClose={() => setEditing(null)}>
+        <Modal title="Editar automação" onClose={() => setEditing(null)} wide>
           <AutomationForm
             initial={{
               name: editing.name,
               description: editing.description ?? "",
               scriptPath: editing.scriptPath,
               queueName: editing.queueName,
+              parameterSchema: editing.parameterSchema ?? [],
             }}
             onSubmit={(d) => update.mutate(d)}
             loading={update.isPending}
@@ -238,20 +265,19 @@ export default function AutomationsPage() {
       {executing && (
         <Modal title={`Executar: ${executing.name}`} onClose={() => setExecuting(null)}>
           <p className="text-sm text-gray-600 mb-4">
-            Isso criará um job imediato na fila <strong>{executing.queueName}</strong>.
+            Será criado um job imediato na fila <strong>{executing.queueName}</strong>.
           </p>
           {execResult && (
             <p className={`mb-3 text-sm ${execResult.startsWith("Erro") ? "text-red-600" : "text-green-600"}`}>
               {execResult}
             </p>
           )}
-          <button
-            onClick={() => execute.mutate(executing.id)}
-            disabled={execute.isPending}
-            className="w-full rounded bg-green-600 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50"
-          >
-            {execute.isPending ? "Enviando…" : "Confirmar execução"}
-          </button>
+          <DynamicParameterForm
+            schema={executing.parameterSchema ?? []}
+            submitLabel="Executar"
+            onSubmit={(params) => execute.mutate({ id: executing.id, params })}
+            loading={execute.isPending}
+          />
         </Modal>
       )}
     </div>
