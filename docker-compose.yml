@@ -56,6 +56,19 @@ services:
     networks:
       - maestro-network
 
+  maestro-web:
+    container_name: maestro_web
+    build:
+      context: ./web
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://192.168.10.46:8080/api/v1}
+    ports:
+      - "3000:3000"
+    depends_on:
+      - maestro-backend
+    networks:
+      - maestro-network
+
 networks:
   maestro-network:
     name: maestro-network
