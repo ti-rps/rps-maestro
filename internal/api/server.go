@@ -3,6 +3,7 @@ package api
 import (
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/EnzzoHosaki/rps-maestro/internal/api/handlers"
 	"github.com/EnzzoHosaki/rps-maestro/internal/api/middleware"
@@ -10,6 +11,7 @@ import (
 	"github.com/EnzzoHosaki/rps-maestro/internal/queue"
 	"github.com/EnzzoHosaki/rps-maestro/internal/repository"
 	"github.com/EnzzoHosaki/rps-maestro/internal/scheduler"
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 )
 
@@ -38,6 +40,22 @@ func NewServer(
 	sched *scheduler.Scheduler,
 ) *Server {
 	router := gin.Default()
+
+	corsConfig := cors.Config{
+		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization", "X-Worker-API-Key"},
+		ExposeHeaders:    []string{"Content-Length"},
+		AllowCredentials: false,
+		MaxAge:           12 * time.Hour,
+	}
+	if len(cfg.AllowedOrigins) > 0 {
+		corsConfig.AllowOrigins = cfg.AllowedOrigins
+		log.Printf("[cors] origens permitidas: %v", cfg.AllowedOrigins)
+	} else {
+		corsConfig.AllowAllOrigins = true
+		log.Printf("[cors] AllowAllOrigins=true (defina MAESTRO_CORS_ALLOWED_ORIGINS para restringir)")
+	}
+	router.Use(cors.New(corsConfig))
 
 	server := &Server{
 		config:         cfg,

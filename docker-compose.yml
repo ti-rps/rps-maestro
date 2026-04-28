@@ -47,6 +47,7 @@ services:
       - MAESTRO_RABBITMQ_USER=guest
       - MAESTRO_RABBITMQ_PASSWORD=guest
       - MAESTRO_SERVER_PORT=8000
+      - MAESTRO_CORS_ALLOWED_ORIGINS=${MAESTRO_CORS_ALLOWED_ORIGINS:-http://192.168.10.46:3000}
       - MAESTRO_WORKER_API_KEY=  # vazio = sem autenticação em dev
     depends_on:
       postgres:
