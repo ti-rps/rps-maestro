@@ -23,7 +23,9 @@ api.interceptors.response.use(
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-export type ParameterFieldType = "text" | "date" | "number" | "select";
+export type ParameterFieldType = "text" | "date" | "number" | "select" | "boolean" | "list";
+
+export type ListItemType = "text" | "number";
 
 export interface ParameterField {
   name: string;
@@ -32,6 +34,7 @@ export interface ParameterField {
   required?: boolean;
   options?: string[];
   placeholder?: string;
+  itemType?: ListItemType;
 }
 
 export type ParameterSchema = ParameterField[];

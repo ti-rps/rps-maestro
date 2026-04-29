@@ -72,7 +72,7 @@ function ScheduleForm({
           onChange={(e) =>
             setForm((f) => ({ ...f, automationId: Number(e.target.value), parameters: {} }))
           }
-          className="w-full rounded border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-full rounded border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
           <option value={0} disabled>
             Selecione…
@@ -92,7 +92,7 @@ function ScheduleForm({
           value={form.cronExpression}
           onChange={(e) => setForm((f) => ({ ...f, cronExpression: e.target.value }))}
           placeholder="0 8 * * *"
-          className="w-full rounded border border-gray-300 px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-full rounded border border-gray-300 px-3 py-2 text-sm font-mono text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
         <div className="mt-1 flex flex-wrap gap-1">
           {CRON_PRESETS.map((p) => (
