@@ -76,10 +76,37 @@ export interface Span {
   source: string;
   file_path?: string;
   file_path_rede?: string;
+  // Presentes nos eventos do syncer (stage "sync") — multi-participação emite
+  // um span por empresa, então precisam vir junto pra não parecer duplicado.
+  codigo_empresa?: number;
+  codigo_filial?: number;
+  nome_empresa?: string;
+  payload?: Record<string, unknown>;
+}
+
+// Participação de UMA empresa cliente numa nota (shadow-sync M0). Uma mesma
+// chave pode ter 2+ participações (emitente=saída, destinatário=entrada),
+// cada uma com seu PRÓPRIO ciclo de importação no Athenas — o status da nota
+// é o agregado (só termina quando TODAS as participações terminam).
+export interface Participacao {
+  codigo_empresa: number;
+  codigo_filial: number; // 0 = desconhecida na linha do Athenas
+  nome_empresa?: string;
+  papel?: "emitente" | "destinatario"; // omitido se indeterminado
+  direction?: Direction;
+  status: NotaStatus;
+  motivo_ignorado?: string;
+  pending_at?: string;
+  imported_at?: string;
+  synced_at?: string; // F1: quando o syncer posicionou a cópia desta empresa
+  sync_url?: string;
 }
 
 export interface NotaDetail extends Nota {
   spans: Span[];
+  // M0: null/ausente/vazio em notas antigas ainda não re-derivadas — tratar os
+  // três como "sem participações conhecidas" (não é erro, não renderizar).
+  participacoes?: Participacao[] | null;
 }
 
 export interface NotaListResponse {
@@ -353,10 +380,27 @@ export interface AgentPayload {
   version?: string;
 }
 
+// Payload do heartbeat do syncer (shadow-sync F1). "modo" é a info de
+// segurança nº1 do piloto: dry-run (só planeja, nenhuma escrita) vs real. As
+// chaves skip_* variam (uma por motivo/classe de skip) — capturadas pelo
+// index signature e agregadas na UI.
+export interface SyncerPayload {
+  agent_name: string;
+  version?: string;
+  modo: "dry-run" | "real";
+  escaneados: number;
+  planejados: number;
+  executados: number;
+  erros: number;
+  error?: string;
+  [key: string]: unknown;
+}
+
 // Union discriminada por "service" — garante tipagem correta ao acessar payload.
 export type ServiceStatus =
   | { service: "poller"; last_beat: string; seconds_ago: number; online: boolean; payload: PollerPayload }
   | { service: "agent"; last_beat: string; seconds_ago: number; online: boolean; payload: AgentPayload }
+  | { service: "syncer"; last_beat: string; seconds_ago: number; online: boolean; payload: SyncerPayload }
   | { service: string; last_beat: string; seconds_ago: number; online: boolean; payload: Record<string, unknown> };
 
 export interface SystemStatus {

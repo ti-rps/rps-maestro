@@ -29,6 +29,7 @@ import {
   type Timeseries,
   type TimeseriesRange,
   type LatencyMetrics,
+  type Participacao,
 } from "@/lib/xml-api";
 import { toCsv, downloadCsv } from "@/lib/csv";
 import { Modal } from "@/components/ui/modal";
@@ -2910,15 +2911,23 @@ const EVENT_LABEL: Record<string, string> = {
   imported: "importada",
   arrived: "chegou",
   synced: "sincronizada",
+  sync_moved: "Sincronizada pelo tracker (arquivo posicionado)",
+  sync_db_inserted: "Registrada no Athenas (aguardando importação)",
+  sync_failed: "Falha na sincronização",
 };
 
-function spanLabels(s: { stage: string; event_type: string }): { stage: string; event: string } {
+// event_type sem rótulo conhecido (o backend vai ganhar novos eventos nas
+// próximas fases do shadow-sync) cai no fallback genérico: mostra o nome
+// bruto em vez de escondê-lo ou quebrar a timeline.
+function spanLabels(s: { stage: string; event_type: string }): { stage: string; event: string; unknown: boolean } {
   if (s.event_type === "seen_pending") {
-    return { stage: "Aguardando importação", event: EVENT_LABEL.seen_pending };
+    return { stage: "Aguardando importação", event: EVENT_LABEL.seen_pending, unknown: false };
   }
+  const known = EVENT_LABEL[s.event_type];
   return {
     stage: STAGE_LABEL[s.stage] ?? s.stage,
-    event: EVENT_LABEL[s.event_type] ?? s.event_type,
+    event: known ?? s.event_type,
+    unknown: !known,
   };
 }
 
@@ -2963,24 +2972,51 @@ function NotaDetailModal({ chave, onClose }: { chave: string; onClose: () => voi
             </div>
           )}
 
+          <ParticipacoesSection participacoes={data.participacoes} />
+
           <h3 className="mb-2 text-sm font-semibold text-gray-700 dark:text-gray-300">Linha do tempo</h3>
           <ol className="relative space-y-3 border-l border-gray-200 pl-5 dark:border-gray-700">
             {data.spans.length === 0 && <li className="text-sm text-gray-500">Sem eventos.</li>}
             {data.spans.map((s, i) => {
               const l = spanLabels(s);
               const path = s.file_path_rede || s.file_path;
+              const isFailure = s.event_type === "sync_failed";
+              const erro = (s.payload?.erro as string | undefined) ?? undefined;
+              const empresa = s.nome_empresa || (s.codigo_empresa ? `#${s.codigo_empresa}-${s.codigo_filial ?? 1}` : undefined);
               return (
                 <li key={i} className="group relative">
-                  <span className="absolute -left-[23px] top-1 h-2.5 w-2.5 rounded-full bg-rps-olive-dark" />
-                  <p className="text-sm font-medium text-gray-800 dark:text-gray-200">
+                  <span
+                    className={`absolute -left-[23px] top-1 h-2.5 w-2.5 rounded-full ${
+                      isFailure ? "bg-red-600" : "bg-rps-olive-dark"
+                    }`}
+                  />
+                  <p className={`text-sm font-medium ${isFailure ? "text-red-700 dark:text-red-400" : "text-gray-800 dark:text-gray-200"}`}>
                     {l.stage} <span className="text-xs font-normal text-gray-500">· {l.event}</span>
+                    {l.unknown && (
+                      <span className="ml-1 rounded bg-gray-200 px-1 py-0.5 text-[10px] font-normal text-gray-600 dark:bg-gray-700 dark:text-gray-300">
+                        evento desconhecido
+                      </span>
+                    )}
                   </p>
-                  <p className="text-xs text-gray-500">{fmtTs(s.observed_at)} · {s.source}</p>
+                  <p className="text-xs text-gray-500">
+                    {fmtTs(s.observed_at)} · {s.source}
+                    {empresa && <> · {empresa}</>}
+                  </p>
+                  {isFailure && erro && (
+                    <p className="mt-1 rounded border border-red-200 bg-red-50 px-2 py-1 text-[11px] text-red-700 dark:border-red-900/40 dark:bg-red-900/20 dark:text-red-400">
+                      {erro}
+                    </p>
+                  )}
                   {path && (
                     <div className="flex items-start gap-1">
                       <p className="break-all text-[11px] text-gray-400">{path}</p>
                       <CopyButton text={path} label="caminho" />
                     </div>
+                  )}
+                  {l.unknown && s.payload && (
+                    <pre className="mt-1 overflow-x-auto rounded bg-gray-50 px-2 py-1 text-[10px] text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+                      {JSON.stringify(s.payload)}
+                    </pre>
                   )}
                 </li>
               );
@@ -2989,6 +3025,64 @@ function NotaDetailModal({ chave, onClose }: { chave: string; onClose: () => voi
         </>
       )}
     </Modal>
+  );
+}
+
+// Uma nota pode envolver 2+ empresas clientes (emitente=saída, destinatário=
+// entrada), cada uma com seu próprio ciclo de importação no Athenas. null/
+// ausente/vazio = "sem participações conhecidas" (nota ainda não re-derivada
+// pelo shadow-sync) — não é erro, não renderiza a seção.
+function ParticipacoesSection({ participacoes }: { participacoes?: Participacao[] | null }) {
+  if (!participacoes || participacoes.length === 0) return null;
+
+  const importadas = participacoes.filter((p) => p.status === "imported").length;
+
+  return (
+    <div className="mb-5">
+      <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold text-gray-700 dark:text-gray-300">
+        Participações
+        {participacoes.length > 1 && (
+          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
+            importada {importadas}/{participacoes.length}
+          </span>
+        )}
+      </h3>
+      <div className="space-y-2">
+        {participacoes.map((p, i) => (
+          <div
+            key={i}
+            className="rounded border border-gray-200 p-2.5 text-xs dark:border-gray-800"
+          >
+            <div className="mb-1 flex flex-wrap items-center gap-1.5">
+              <span className="text-sm font-medium text-gray-800 dark:text-gray-200">
+                {p.nome_empresa || `#${p.codigo_empresa}-${p.codigo_filial}`}
+              </span>
+              <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${XML_STATUS_STYLE[p.status]}`}>
+                {XML_STATUS_LABEL[p.status]}
+              </span>
+              <DirectionBadge direction={p.direction} />
+              {p.papel && (
+                <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[11px] text-gray-600 dark:bg-gray-800 dark:text-gray-400">
+                  {p.papel === "emitente" ? "Emitente" : "Destinatário"}
+                </span>
+              )}
+            </div>
+            {p.motivo_ignorado && (
+              <p className="text-gray-500">Motivo: {p.motivo_ignorado}</p>
+            )}
+            <p className="text-gray-400">
+              {[
+                p.pending_at && `pendente ${fmtTs(p.pending_at)}`,
+                p.synced_at && `sincronizada ${fmtTs(p.synced_at)}`,
+                p.imported_at && `importada ${fmtTs(p.imported_at)}`,
+              ]
+                .filter(Boolean)
+                .join(" · ") || "—"}
+            </p>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 

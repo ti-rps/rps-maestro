@@ -8,6 +8,7 @@ import {
   xmlStatusApi,
   type PollerPayload,
   type AgentPayload,
+  type SyncerPayload,
   type ServiceStatus,
 } from "@/lib/xml-api";
 import { Skeleton } from "@/components/skeleton";
@@ -25,7 +26,7 @@ function fmtNum(n: number): string {
 }
 
 // Separa os serviços conhecidos (typed) dos demais.
-function findService<T extends "poller" | "agent">(
+function findService<T extends "poller" | "agent" | "syncer">(
   services: ServiceStatus[],
   name: T,
 ): Extract<ServiceStatus, { service: T }> | undefined {
@@ -178,6 +179,7 @@ export default function XmlStatusPage() {
   const apiOnline = !isError;
   const poller = findService(services, "poller");
   const agent = findService(services, "agent");
+  const syncer = findService(services, "syncer");
   const alerts = buildAlerts(services, apiOnline, sweepDismissed);
 
   // Auto-dismiss do alerta verde (sweep) após 60s.
@@ -247,11 +249,11 @@ export default function XmlStatusPage() {
 
       {/* Cards de saúde */}
       {isLoading ? (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          {[0, 1, 2].map((i) => <Skeleton key={i} className="h-20 w-full" />)}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {[0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-20 w-full" />)}
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <ServiceCard
             name="API"
             online={apiOnline ? true : false}
@@ -270,12 +272,18 @@ export default function XmlStatusPage() {
             subtitle={svcSubtitle(agent)}
             icon={<User className="h-5 w-5 text-gray-400" aria-hidden />}
           />
+          <ServiceCard
+            name="Syncer"
+            online={syncer ? syncer.online : null}
+            subtitle={svcSubtitle(syncer)}
+            icon={<Bot className="h-5 w-5 text-gray-400" aria-hidden />}
+          />
         </div>
       )}
 
       {/* Atividade recente */}
       {!isLoading && (
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className="grid gap-4 lg:grid-cols-3">
           {/* Poller */}
           <div className="space-y-4">
             {poller ? (
@@ -338,6 +346,57 @@ export default function XmlStatusPage() {
               </Section>
             ) : (
               <Section title="Agente">
+                <p className="py-4 text-center text-sm text-gray-500">Sem dados — aguardando primeiro heartbeat.</p>
+              </Section>
+            )}
+          </div>
+
+          {/* Syncer */}
+          <div className="space-y-4">
+            {syncer ? (
+              <Section title="Syncer — Piloto shadow-sync">
+                {(() => {
+                  const p = syncer.payload as SyncerPayload;
+                  // "modo" é a informação de segurança nº1 do piloto: dry-run
+                  // (só planeja, nenhuma escrita) vs real (grava no Athenas).
+                  const isReal = p.modo === "real";
+                  const skips = Object.entries(p).filter(
+                    ([k, v]) => k.startsWith("skip_") && typeof v === "number",
+                  ) as [string, number][];
+                  return (
+                    <>
+                      <p
+                        className={`mb-3 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${
+                          isReal
+                            ? "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300"
+                            : "bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-300"
+                        }`}
+                      >
+                        {isReal ? "MODO REAL — grava no Athenas" : "DRY-RUN — nenhuma escrita"}
+                      </p>
+                      <Row label="Escaneados" value={p.escaneados} zero />
+                      <Row label="Planejados" value={p.planejados} zero />
+                      <Row label="Executados" value={p.executados} zero />
+                      <Row label="Erros" value={p.erros} zero />
+                      {skips.length > 0 && (
+                        <>
+                          <Divider />
+                          <p className="text-xs text-gray-400" title={skips.map(([k, v]) => `${k.replace("skip_", "")}: ${v}`).join(" · ")}>
+                            Pulados: {skips.map(([k, v]) => `${k.replace("skip_", "")} (${v})`).join(" · ")}
+                          </p>
+                        </>
+                      )}
+                      {p.error && (
+                        <p className="mt-2 rounded border border-red-200 bg-red-50 px-2 py-1 text-[11px] text-red-700 dark:border-red-900/40 dark:bg-red-900/20 dark:text-red-400">
+                          {p.error}
+                        </p>
+                      )}
+                    </>
+                  );
+                })()}
+              </Section>
+            ) : (
+              <Section title="Syncer">
                 <p className="py-4 text-center text-sm text-gray-500">Sem dados — aguardando primeiro heartbeat.</p>
               </Section>
             )}
